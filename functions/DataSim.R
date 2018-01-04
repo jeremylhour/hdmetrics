@@ -18,7 +18,7 @@
 #' 
 #' @author Jeremy Lhour
 
-DataSim <- function(n=2000,p=50,Ry=.5,Rd=.2,Intercept=T,rho=.5){
+DataSim <- function(n=2000,p=50,Ry=.5,Rd=.2,Intercept=T,rho=.5,a=.5){
   
   ### Covariate variance matrix
   Sigma = matrix(0,nrow=p, ncol=p)
@@ -55,11 +55,10 @@ DataSim <- function(n=2000,p=50,Ry=.5,Rd=.2,Intercept=T,rho=.5){
   even = 1:p %% 2 == 0
   X[,even] = ifelse(X[,even] > 0,1,0)
   
-  logit = function(x) 1/(1+exp(-x))
+  # logit = function(x) 1/(1+exp(-x))
   d = as.numeric(runif(n) < pnorm(X%*%gamma))
   
   ### Treatment effect
-  a = .5
   y = a*d + X%*%b + rnorm(n)
   
   if(Intercept) X = cbind(rep(1,n),X)
@@ -68,6 +67,5 @@ DataSim <- function(n=2000,p=50,Ry=.5,Rd=.2,Intercept=T,rho=.5){
               y=y,
               d=d,
               b=b,
-              g=gamma,
-              ATT=a))
+              g=gamma))
 }
