@@ -160,7 +160,7 @@ get.plot <- function(data,modelS,title="A Title",s){
   return(plot_res)
 } # plot func
 
-pdf("Immunized.pdf",width=14,height=4)
+pdf("plots/Immunized.pdf",width=14,height=4)
 grid.arrange(get.plot(data_res,1,"Naive Post-Selec", mean(stdev)), get.plot(data_res,2,"Double-Selec", mean(stdev)), get.plot(data_res,3,"Double-Selec, Cross-fitting", mean(stdev)), ncol=3)
 dev.off()
 
