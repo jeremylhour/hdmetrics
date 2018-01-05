@@ -1,4 +1,5 @@
 ### Double Selection, simple case
+### USed in Section 2.2 of the HDMetrics class.
 ### Jeremy L Hour
 ### 04/01/2018
 
@@ -52,7 +53,6 @@ for(r in 1:R){
   } else {
     naivefit = lm(y ~ d + X[,Snaive])
   }
-  
   
   
   ### METHOD 2: Double-Selection, no sample-splitting
@@ -142,16 +142,14 @@ StatDisplay[1:3,"RMSE"] = sqrt(apply((Results-a)^2,2,mean))
 row.names(StatDisplay) = c("Naive","Immunized","Immunized, Cross-fitted")
 print(StatDisplay)
 
-# Draw the charts
+### DRAW CHARTS
 id = c(mapply(function(x) rep(x,R),1:3))
 val = c(Results)-a
 data_res = data.frame(val = val, model = id)
 
 M = max(abs(quantile(Results,.01,na.rm=T)),abs(quantile(Results,.99,na.rm=T)))
-lb = -1.1*M
-ub = 1.1*M
+lb = -1.1*M; ub = 1.1*M
 
-### Function for plot
 get.plot <- function(data,modelS,title="A Title",s){
   plot_res <- ggplot(subset(data, (model==modelS)), aes(x=val)) + 
     geom_histogram(binwidth = .02, alpha=.5, position='identity',fill="steelblue", aes(y = ..density..)) +
@@ -160,9 +158,9 @@ get.plot <- function(data,modelS,title="A Title",s){
     stat_function(fun = dnorm, args=list(mean=0, sd=s), colour="darkorchid3", size=1) +
     theme(plot.title = element_text(lineheight=.8, face="bold"),legend.position="none")
   return(plot_res)
-}
+} # plot func
 
 pdf("Immunized.pdf",width=14,height=4)
-grid.arrange(get.plot(data_res,1,"Naive Post-Selec", mean(stdev)), get.plot(data_res,2,"Double-Selec", mean(stdev)), get.plot(data_res,3,"Double-Selec, Cross-fitted", mean(stdev)), ncol=3)
+grid.arrange(get.plot(data_res,1,"Naive Post-Selec", mean(stdev)), get.plot(data_res,2,"Double-Selec", mean(stdev)), get.plot(data_res,3,"Double-Selec, Cross-fitting", mean(stdev)), ncol=3)
 dev.off()
 

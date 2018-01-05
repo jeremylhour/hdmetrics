@@ -23,13 +23,13 @@
 #' @return nbIter Number of iterations necessary for convergence.
 #' @return ConvergenceFISTA 0 if convergence, -555 if not.
 #' 
-#' @author Jeremy Lhour
+#' @author Jeremy LHour
 
 
 LassoFISTA <- function(betaInit=rep(0,ncol(X)),y,X,W=rep(1,nrow(X)),
                         nopen=NULL,lambda,
                         tol=1e-8,maxIter=1000,trace=F){
-  # Observation weighting
+  ### Observation weighting
   W = as.vector(W)
   y = sqrt(W)*y
   X = sweep(X,MARGIN=1,sqrt(W),`*`)
@@ -50,8 +50,8 @@ LassoFISTA <- function(betaInit=rep(0,ncol(X)),y,X,W=rep(1,nrow(X)),
     theta = (1+sqrt(1+4*thetaO^2))/2
     delta = (1-thetaO)/theta
     
-    betaO <- beta
-    beta <- prox(v - eta*LeastSqgrad(v,y,X), lambda*eta,nopen)
+    betaO = beta
+    beta = prox(v - eta*LeastSqgrad(v,y,X), lambda*eta,nopen)
     
     v = (1-delta)*beta + delta*betaO
     
@@ -65,10 +65,8 @@ LassoFISTA <- function(betaInit=rep(0,ncol(X)),y,X,W=rep(1,nrow(X)),
       break
     } else if(sum(abs(LassoObj(beta,y,X,lambda,nopen)-LassoObj(betaO,y,X,lambda,nopen))) < tol || k > maxIter) break
     
-    # if(sum(abs(beta-betaO)) < tol || k > maxIter) break
-    
   }
-  # line 66 has been change to change the stopping criterion
+  
   if(k > maxIter){
     print("Max. number of iterations reach in Lasso minimization.")
     cv = -555
@@ -108,9 +106,9 @@ LeastSqgrad <- function(mu,y,X){
 
 LassoObj <- function(beta,y,X,lambda,nopen){
   if(length(nopen)>0){
-    f <- LeastSq(beta,y,X) + lambda*sum(abs(beta[-nopen]))
+    f = LeastSq(beta,y,X) + lambda*sum(abs(beta[-nopen]))
   } else {
-    f <- LeastSq(beta,y,X) + lambda*sum(abs(beta))
+    f = LeastSq(beta,y,X) + lambda*sum(abs(beta))
   }
   return(f)
 }
