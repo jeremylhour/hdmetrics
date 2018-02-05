@@ -27,7 +27,7 @@ library("randomForest")
 source("functions/ATE.R")
 
 ### Pennsylvania Bonus Data
-Penn = as.data.frame(read.table("packages/DMLonGitHub-master/penn_jae.dat", header=T ))
+Penn = as.data.frame(read.table("data/penn_jae.dat", header=T ))
 
 index = (Penn$tg==0) | (Penn$tg==4) # Only keep treatment=4 and controls
 data = Penn[index,]

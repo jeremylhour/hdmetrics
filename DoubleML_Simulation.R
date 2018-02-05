@@ -1,5 +1,5 @@
-### Double Selection, simple case
-### USed in Section 2.2 of the HDMetrics class.
+### Double Selection and sample-splitting, simulations
+### Used in Section 2.2 of the HDMetrics class.
 ### Jeremy L Hour
 ### 04/01/2018
 
