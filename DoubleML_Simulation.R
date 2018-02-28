@@ -2,6 +2,7 @@
 ### Used in Section 2.2 of the HDMetrics class.
 ### Jeremy L Hour
 ### 04/01/2018
+### Edited: 28/02/2018
 
 ### Set working directory
 setwd("//ulysse/users/JL.HOUR/1A_These/B. ENSAE Classes/Cours3A/hdmetrics")

@@ -1,6 +1,7 @@
 ### Double ML: UI Bonus Example
 ### Jeremy LHour
 ### 08/01/2018
+### Edited: 28/02/2018
 
 ### This is an empirical example from Chernozhukov et al. (2017) procedure to
 ### Estimate ATT assuming heteregeneous effects.
