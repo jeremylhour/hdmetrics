@@ -14,26 +14,26 @@
 #' @author Jeremy LHour
 
 ATE <- function(Y,D,g1,g0,m){
-  psi = (g1-g0) + D*(Y-g1)/m - (1-D)*(Y-g0)/(1-m)
-  return(mean(psi))
+  gamma = (g1-g0) + D*(Y-g1)/m - (1-D)*(Y-g0)/(1-m)
+  return(mean(gamma))
 }
 
 SE.ATE <- function(Y,D,g1,g0,m){
   n = length(Y)
-  psi = (g1-g0) + D*(Y-g1)/m - (1-D)*(Y-g0)/(1-m)
-  return(sd(psi)/sqrt(n))
+  gamma = (g1-g0) + D*(Y-g1)/m - (1-D)*(Y-g0)/(1-m)
+  return(sd(gamma)/sqrt(n))
 }
 
 ATT <- function(Y,D,g0,m){
   pi = mean(D)
-  psi = D*(Y-g0)/pi - (1-D)*m*(Y-g0)/(pi*(1-m))
-  return(mean(psi))
+  gamma = D*(Y-g0)/pi - (1-D)*m*(Y-g0)/(pi*(1-m))
+  return(mean(gamma))
 }
 
 SE.ATT <- function(Y,D,g0,m){
   n = length(Y)
   pi = mean(D)
-  psi = D*(Y-g0)/pi - (1-D)*m*(Y-g0)/(pi*(1-m))
-  return(list(SE = sd(psi)/(pi*sqrt(n)),
-              psi = psi))
+  gamma = D*(Y-g0)/pi - (1-D)*m*(Y-g0)/(pi*(1-m))
+  return(list(SE = sd(gamma)/sqrt(n),
+              gamma = gamma))
 }
