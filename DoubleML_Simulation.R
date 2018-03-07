@@ -23,7 +23,7 @@ source("functions/DataSim.R")
 source("functions/LassoFISTA.R")
 
 ### Simulation parameters
-R = 10000 # nb simulations
+R = 1000 # nb simulations
 n = 200 # sample size
 p = 150 # nb variables
 K = 5 # nb folds
@@ -93,8 +93,8 @@ for(r in 1:R){
     NIk = cvgroup!=k
     
     # 0. Adjust Lasso penalty level
-    gstar = .1/log(max(p,sum(Ik)))
-    lambdastar = 2.2*qnorm(1-.5*g/p)/sqrt(sum(Ik)) # Lasso penalty level
+    gstar = .1/log(max(p,sum(NIk)))
+    lambdastar = 2.2*qnorm(1-.5*g/p)/sqrt(sum(NIk)) # Lasso penalty level
     
     # Abis. Selection on Treatment
     treatfit = LassoFISTA(y=d[NIk],X=X[NIk,],nopen=c(1),lambda=.15*lambdastar) # Do not penalize the constant
