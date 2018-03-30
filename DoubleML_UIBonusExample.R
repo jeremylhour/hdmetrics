@@ -40,7 +40,8 @@ data$inuidur1 = log(data$inuidur1)
 
 Y = data[,"inuidur1"] # Outcome
 D = data[,"tg"] # Treatment
-X = as.matrix(data[,c("female","black","othrace","dep1","dep2","q2","q3","q4","q5","q6","agelt35","agegt54","durable","lusd","husd")]) # Covariates
+X = as.matrix(data[,c("female","black","othrace","dep1","dep2",
+                      "q2","q3","q4","q5","q6","agelt35","agegt54","durable","lusd","husd")]) # Covariates
 
 K = 5
 n = length(Y)
