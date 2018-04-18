@@ -1,0 +1,469 @@
+
+
+
+---
+title: "Simulations Causal Forests"
+output: pdf_document
+---
+
+## Simulations Causal Forests
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(devtools)
+# install_github("susanathey/causalTree")
+# install_github("swager/causalForest")
+# install_github("swager/randomForestCI")
+library(randomForestCI)
+library(causalForest)
+# library(causalTree)
+library(party)
+#### "simple" decision tree
+library(tree)
+library(Ecdat)
+data(Schooling)
+head(Schooling)
+```
+
+#Variables
+smsa66 lived in smsa in 1966 ?
+
+smsa76 lived in smsa in 1976 ?
+
+age76 age in 1976
+
+daded dads education (imputed avg if missing)
+
+south66 lived in south in 1966 ?
+
+south76 lived in south in 1976 ?
+
+lwage76 log wage in 1976 (outliers trimmed)
+
+famed mom-dad education class (1-9)
+
+black black ?
+
+wage76 wage in 1976 (raw, cents per hour)
+
+enroll76 enrolled in 1976 ?
+
+kww the kww score
+
+iqscore a normed IQ score
+
+mar76 married in 1976 ?
+
+libcrd14 library card in home at age 14 ?
+
+exp76 experience in 1976
+
+```{r}
+Schooling$high <- 1*(Schooling$wage76 > quantile(Schooling$wage76,0.8))
+### train/test sample
+set.seed(1789)
+ind <- sample(2, nrow(Schooling), replace=TRUE,prob=c(0.7,0.3))
+trainData <- Schooling[ind==1,]
+testData <-Schooling[ind==2, ]
+
+formula1 <- wage76~  iqscore + black + exp76+ age76
+Tree1 <- ctree(formula1, trainData    )
+Tree1 <- tree(formula1, trainData    )
+summary(Tree1)
+```
+
+```{r fig.width=7, fig.height=6}
+plot(Tree1)
+text(Tree1, pretty=0)
+```
+
+# crossvalidation error
+```{r fig.width=7, fig.height=6}
+cv.Tree1 <- cv.tree(Tree1)
+## plot cross validation error cv.Tree1$dev as a function of size
+plot(cv.Tree1$size,cv.Tree1$dev, type='b')
+prune.Tree1 <- prune.tree(Tree1, best=5)
+```
+
+```{r fig.width=7, fig.height=6}
+plot(prune.Tree1)
+text(prune.Tree1, pretty=0)
+```
+
+```{r fig.width=7, fig.height=6}
+test_predict <- predict(prune.Tree1, newdata= testData)
+plot(test_predict, testData$wage76)
+abline(0,1)
+mean((test_predict - testData$wage76)^2)
+```
+
+
+### Forests 
+```{r}
+RF1 <- cforest(formula1, trainData, controls=cforest_control( mtry=4,mincriterion = 0)    )
+test_predict <- predict(RF1 ,newdata = testData, type = "response")
+
+```{r fig.width=7, fig.height=6}
+plot(test_predict, testData$wage76)
+abline(0,1)
+```
+
+```{r}
+mean((test_predict - testData$wage76)^2)
+varimp(RF1 )
+```
+
+
+#### classification tree
+```{r}
+formula1 <- high~ iqscore + black + exp76+ age76
+Tree1 <- ctree(formula1, trainData    )
+# Tree1 <- tree(formula1, trainData    )
+```
+
+```{r fig.width=7, fig.height=6}
+# summary(Tree1)
+plot(Tree1)
+# text(Tree1, pretty=0)
+```
+
+```{r}
+train_predict <- predict(Tree1, trainData, type="response")
+```
+
+
+## in-sample confusion matrix
+```{r}
+table(train_predict>0.5,trainData$high)
+mean( (train_predict>0.5) != trainData$high )*100
+```
+
+```{r}
+test_predict <- predict(Tree1, testData, type="response")
+table(test_predict>0.5,testData$high)
+mean( (test_predict>0.5) != testData$high )*100
+```
+
+
+
+## Causal Forest
+
+Generate feature data: $X \sim \mathcal{N}(0, I_{p\times p})$
+```{r}
+n = 2000; p = 10
+X = matrix(rnorm(n*p), n, p)
+out_len = 101
+X.test = matrix(0, out_len , p)
+X.test[,1] = seq(-2, 2, length.out = out_len )
+```
+
+Then we simulate the treatement variable, with propensity score $p(X) = 0.5$, and the outcome variable
+$$Y = \tau(X) D + X_2 + X_3 \wedge 0 + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0,1),$$
+$$ \tau(X) = X_1 \vee 0 $$
+```{r}
+# Perform treatment effect estimation.
+D = rbinom(n, 1, 0.5)
+Y = pmax(X[,1], 0) * D + X[,2] + pmin(X[,3], 0) + rnorm(n)
+dataTrain <- as.data.frame(cbind(X,Y,D))
+
+formula1 = paste( paste(colnames(dataTrain)[11], "~ "),paste(colnames(dataTrain)[1:10],collapse="+"))
+# tau.forest = causalForest(formula1, data=as.matrix(dataTrain), treatment = dataTrain$D,
+#                             split.Rule="CT", split.Honest=T,  split.Bucket=F, bucketNum = 5,
+#                             bucketMax = 100, cv.option="CT", cv.Honest=T, minsize = 2L, 
+#                             split.alpha = 0.5, cv.alpha = 0.5,
+#                             sample.size.total = floor(nrow(dataTrain) / 2), sample.size.train.frac = .5,
+#                             mtry = ceiling(ncol(dataTrain)/3), nodesize = 3, num.trees= 5,ncolx=p,ncov_sample=p) 
+
+
+ind <- sample(1:n,floor(n/2),replace=F)
+# honestTree <- honest.causalTree(formula1, data=dataTrain[ind ,], treatment = dataTrain$D[ind ], 
+#                                 est_data = dataTrain[-ind, ], 
+#                                 est_treatment =  dataTrain$D[-ind ], 
+#                                 split.Rule = "CT", split.Honest = T, 
+#                                 HonestSampleSize = nrow(dataTrain[-ind, ]), 
+#                                 split.Bucket = T, cv.option = "CT")
+# 
+#  honestTree$cptable
+```
+
+```{r}
+# opcp <-  honestTree$cptable[,1][which.min(honestTree$cptable[,4])]
+# opTree <- prune(honestTree, opcp)
+```
+
+
+```{r fig.width=7, fig.height=6}
+# rpart.plot(opTree)
+```
+
+
+```{r fig.width=7, fig.height=6}
+# out <- matrix(0,1,out_len )
+# #### Forest
+# s=floor(0.7*n)
+# ntree=300
+# 
+# for(b in 1:ntree){
+#   ind <- sample(1:n,s,replace=F)
+#   dataTrain <- as.data.frame(cbind(X,Y,D))[ind,]
+#   ind <- sample(1:s,floor(s/2),replace=F)
+#   honestTree <- honest.causalTree(formula1, data=dataTrain[ind ,], treatment = dataTrain$D[ind ], 
+#                                   est_data = dataTrain[-ind, ], 
+#                                   est_treatment =  dataTrain$D[-ind ], 
+#                                   split.Rule = "CT", split.Honest = T, 
+#                                   HonestSampleSize = nrow(dataTrain[-ind, ]), 
+#                                   split.Bucket = T, cv.option = "CT")
+#   opcp <-  honestTree$cptable[,1][which.min(honestTree$cptable[,4])]
+#   opTree <- prune(honestTree, opcp)
+# out <- out + predict(opTree, newdata=as.data.frame(X.test))
+# }
+# out <- out /ntree
+```
+
+```{r fig.width=7, fig.height=6}
+# plot(X.test[,1],out, ylim = range(out, 0, 2), xlab = "x", ylab = "tau", type = "l")
+# lines(X.test[,1], pmax(0, X.test[,1]), col = 2, lty = 2)
+```
+
+
+```{r}
+library(grf)
+# cfpredtest <- predict(cf, newdata=dataTest, type="vector")
+tau.forest_2 = causal_forest(X, Y, D, precompute.nuisance = FALSE)
+tau.hat_2 = predict(tau.forest_2, X.test)
+
+tau.forest = causal_forest(X, Y, D)
+tau.hat = predict(tau.forest, X.test)
+variable_importance(tau.forest)
+```
+
+Estimate the conditional average treatment effect on the full sample (CATE).
+```{r fig.width=7, fig.height=6}
+plot(X.test[,1], tau.hat$predictions, ylim = range(tau.hat$predictions, 0, 2), xlab = "x", ylab = "tau", type = "l")
+lines(X.test[,1], tau.hat_2$predictions, col = 4, lty = 2)
+lines(X.test[,1], pmax(0, X.test[,1]), col = 2, lty = 2)
+```
+
+```{r}
+# Estimate the conditional average treatment effect on the full sample (CATE).
+estimate_average_effect(tau.forest, target.sample = "all")
+
+# Estimate the conditional average treatment effect on the treated sample (CATT).
+# Here, we don't expect much difference between the CATE and the CATT, since
+# treatment assignment was randomized.
+estimate_average_effect(tau.forest, target.sample = "treated")
+
+# Add confidence intervals for heterogeneous treatment effects
+tau.forest = causal_forest(X, Y, D, num.trees = 4000)
+tau.hat = predict(tau.forest, X.test, estimate.variance = TRUE)
+sigma.hat = sqrt(tau.hat$variance.estimates)
+```
+
+
+
+```{r fig.width=7, fig.height=6}
+plot(X.test[,1], tau.hat$predictions, ylim = range(tau.hat$predictions + 1.96 * sigma.hat, tau.hat$predictions - 1.96 * sigma.hat, 0, 2), xlab = "x", ylab = "tau", type = "l")
+lines(X.test[,1], tau.hat$predictions + 1.96 * sigma.hat, col = 1, lty = 2)
+lines(X.test[,1], tau.hat$predictions - 1.96 * sigma.hat, col = 1, lty = 2)
+lines(X.test[,1], pmax(0, X.test[,1]), col = 2, lty = 1)
+```
+
+
+Add confidence intervals for heterogeneous treatment effects; growing more trees is now recommended.
+```{r}
+tau.forest = causal_forest(X, Y, D, num.trees = 4000)
+tau.hat = predict(tau.forest, X.test, estimate.variance = TRUE)
+sigma.hat = sqrt(tau.hat$variance.estimates)
+```
+
+
+```{r fig.width=7, fig.height=6}
+plot(X.test[,1], tau.hat$predictions, ylim = range(tau.hat$predictions +
+            1.96 * sigma.hat, tau.hat$predictions - 1.96 * sigma.hat, 0, 2), 
+     xlab = "x", ylab = "tau", type = "l")
+lines(X.test[,1], tau.hat$predictions + 1.96 * sigma.hat, col = 1, lty = 2)
+lines(X.test[,1], tau.hat$predictions - 1.96 * sigma.hat, col = 1, lty = 2)
+lines(X.test[,1], pmax(0, X.test[,1]), col = 2, lty = 1)
+```
+
+
+#### Another example
+
+## Case 1: without confounding factoers (p(x)=0)
+
+Generate data: $X \sim \mathcal{N}(0, I_{d\times d})$, treatement variable, with propensity score $p(X) = 0.5$, and the outcome variable
+$$Y = \tau(X) (D-0.5) + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0,1),$$
+with $$\tau(X) = \zeta(X_1) \zeta(X_2),  \quad \zeta(x) = 1 + \dfrac{1}{1+e^{-20(x-1/3)}} .$$
+
+```{r}
+### Without confounding factors (p(x) =constant)
+
+# Generate data.
+n = 10000; p = 3
+X = matrix(runif(n*p), n, p)
+X.test =matrix(runif(n*p), n, p)
+# Perform treatment effect estimation.
+D = rbinom(n, 1, 0.5)
+zeta1 <- function(x){
+  return(1+ 1/(1+ exp(-20*(x-1/3))))
+}
+Y = (D-0.5)*(zeta1(X[,1]) *zeta1(X[,2])) + rnorm(n)
+truth = (zeta1(X.test[,1]) *zeta1(X.test[,2]))
+
+##### with CausalForest package
+ntree=500
+forest = causalForest(X, Y, D, num.trees = ntree, sample.size = n / 10)
+tauhat.rf <- predict(forest, X.test)
+```
+
+Estimation, with $s=n/2$ and $B=2000$.
+```{r}
+# #### with the grf package
+# tau.forest = causal_forest(X, Y, D, sample.fraction = 0.5,num.tree = 2000  )
+# # tau.knn = iv.series(X, Y, W,Z=NULL  )
+# tau.hat = predict(tau.forest, X.test)
+
+# ##### kNN comparison
+library(FNN)
+# neighbors = get.knnx(X,X.test, k=100)$nn.index
+
+kk = c(seq(3, 99, by = 3))
+knn.mses = sapply(kk, function(k) {
+  neighbors = get.knnx(X,X.test, k=k)$nn.index
+  tauhat =  apply(neighbors, 1, function(nn) {
+    Yp = Y[nn]
+    Dp = D[nn]
+    y.hat = mean(Yp[Dp==1]) -  mean(Yp[Dp==0]) 
+  })
+  mean((truth - tauhat)^2)
+})
+
+print(knn.mses)
+```
+Comparison with k-nearest neighbors: 
+$$\widehat{\tau}_{kNN} = \dfrac{1}{k}\sum_{i \in S_1(x)}Y_i - \dfrac{1}{k}\sum_{i \in S_0(x)}Y_i$$
+
+
+
+```{r}
+#### compute for the optimum
+k.opt = kk[which.min(knn.mses)]
+neighbors = get.knnx(X,X.test, k=k.opt)$nn.index
+tau.hat.k <-  apply(neighbors, 1, function(nn) {
+  Yp = Y[nn]
+  Dp = D[nn]
+  y.hat = mean(Yp[Dp==1]) -  mean(Yp[Dp==0]) 
+})
+
+
+library(RColorBrewer)
+library(Hmisc)
+library(mgcv)
+library(ggplot2)
+x <- seq(-1, 1, length=100)
+y <- seq(-1, 1, length=100)
+xy <- expand.grid(x=x, y=y)
+# xy <- cbind(xy , matrix(0,100,1))
+xy <- cbind(xy , matrix(0,100,1), matrix(0,100,1), matrix(0,100,1), matrix(0,100,1))
+
+k <- 10
+my.cols <- rev(brewer.pal(k, "RdYlBu"))
+
+minp = min(truth, tauhat.rf, tau.hat.k)
+maxp = max(truth, tauhat.rf, tau.hat.k)
+rngp = maxp - minp
+
+ncol = 100
+
+true.scl = pmax(ceiling(ncol * (truth - minp) / rngp), 1)
+rf.scl = pmax(ceiling(ncol * (tauhat.rf - minp) / rngp), 1)
+knn.scl = pmax(ceiling(ncol * (tau.hat.k - minp) / rngp), 1)
+hc = heat.colors(ncol)
+```
+
+The True Treatment effect
+```{r, fig.width=7, fig.height=6}
+plot(X.test[,1], X.test[,2], pch = 16, col = hc[true.scl], xlab = "", ylab = "",main = "True")
+```
+
+The treatment effect estimated via random forest
+```{r, fig.width=7, fig.height=6}
+plot(X.test[,1], X.test[,2], pch = 16, col = hc[rf.scl], xlab = "", ylab = "",main = "Causal Forest")
+```
+
+The treatment effect estimated via kNN
+```{r, fig.width=7, fig.height=6}
+plot(X.test[,1], X.test[,2], pch = 16, col = hc[knn.scl], xlab = "", ylab = "",main = "KNN")
+```
+```
+
+```{r fig.width=7, fig.height=6}
+
+neighbors = get.knnx(X,xy, k=k.opt)$nn.index
+tau.hat.k <-  apply(neighbors, 1, function(nn) {
+  Yp = Y[nn]
+  Dp = D[nn]
+  y.hat = mean(Yp[Dp==1]) -  mean(Yp[Dp==0]) 
+})
+# tau.hat = predict(tau.forest, xy)
+colnames(xy) <- colnames(X.test)
+tau.hat =predict(forest,xy)
+z <- matrix(tau.hat, length(x), length(y))
+z_k <- matrix(tau.hat.k, length(x), length(y))
+z1 <- matrix(zeta1(xy[,1]) *zeta1(xy[,2]), length(x), length(y))
+
+# z1_cut <-cut(tau.hat$predictions, quantile(tau.hat$predictions,seq(0,1, length.out=k))+seq(0,0.001, length.out=k)   )
+
+```
+
+
+The treatment effect estimated via random forests
+```{r, fig.width=7, fig.height=6}
+z1_cut <-cut(tau.hat, quantile(tau.hat,seq(0,1, length.out=k))+seq(0,0.001, length.out=k)   )
+plot(xy[,1],xy[,2], col=my.cols[z1_cut], pch = 15, main="Causal Forest")
+contour(x,y,z1, drawlabels=FALSE, nlevels=k, lwd=2, add=TRUE)
+```
+
+The treatment effect estimated via kNN
+```{r, fig.width=7, fig.height=6}
+z1_cut <-cut(tau.hat.k, quantile(tau.hat.k,seq(0,1, length.out=k))+seq(0,0.001, length.out=k)   )
+plot(xy[,1],xy[,2], col=my.cols[z1_cut], pch = 15, main="KNN")
+contour(x,y,z1, drawlabels=FALSE, nlevels=k, lwd=2, add=TRUE)
+```
+
+
+The true treatment effect
+```{r, fig.width=7, fig.height=6}
+truth <- (zeta1(xy[,1]) *zeta1(xy[,2]))
+z1_cut <-cut(truth, quantile(truth,seq(0,1, length.out=k))+seq(0,0.001, length.out=k)   )
+plot(xy[,1],xy[,2], col=my.cols[z1_cut], pch = 15, main="True")
+contour(x,y,z1, drawlabels=FALSE, nlevels=k, lwd=2, add=TRUE)
+```
+
+
+![](figures/im1.png)
+
+![](figures/im2.png)
+
+
+##### With no treatment effect but selection on the observables (A)
+```{r}
+tau =0 
+p=3
+X = matrix(runif(n * p, 0, 1), n, p) # features
+propensity = (1 + dbeta(X[,3], 2, 4)) / 4
+mu = 2*X[,3] - 1
+D = rbinom(n, 1, propensity)
+Y = mu + (D -0.5)* tau + rnorm(n)
+
+tree_mult = 1000
+X.test =matrix(runif(n*p), n, p)
+
+forest = propensityForest(X, Y, D, num.trees = tree_mult, sample.size = n^(0.8), nodesize = 1)
+predictions = predict(forest, X.test)
+forest.ci = randomForestInfJack(forest, X.test, calibrate = TRUE)
+```
+
+
+
+

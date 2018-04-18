@@ -1,0 +1,97 @@
+---
+title: "Simulations Causal Tree"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(devtools)
+# install_github("susanathey/causalTree")
+# install_github("swager/causalForest")
+# install_github("swager/randomForestCI")
+library(randomForestCI)
+library(causalForest)
+library(causalTree)
+library(party)
+#### "simple" decision tree
+library(tree)
+## Causal Forest
+```
+
+
+Generate feature data: $X \sim \mathcal{N}(0, I_{p\times p})$
+```{r}
+n = 2000; p = 10
+X = matrix(rnorm(n*p), n, p)
+out_len = 101
+X.test = matrix(0, out_len , p)
+X.test[,1] = seq(-2, 2, length.out = out_len )
+```
+
+Then we simulate the treatement variable, with propensity score $p(X) = 0.5$, and the outcome variable
+$$Y = \tau(X) D + X_2 + X_3 \wedge 0 + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0,1),$$
+$$ \tau(X) = X_1 \vee 0 $$
+```{r}
+# Perform treatment effect estimation.
+D = rbinom(n, 1, 0.5)
+Y = pmax(X[,1], 0) * D + X[,2] + pmin(X[,3], 0) + rnorm(n)
+dataTrain <- as.data.frame(cbind(X,Y,D))
+
+formula1 = paste( paste(colnames(dataTrain)[11], "~ "),paste(colnames(dataTrain)[1:10],collapse="+"))
+tau.forest = causalForest(formula1, data=as.matrix(dataTrain), treatment = dataTrain$D,
+                            split.Rule="CT", split.Honest=T,  split.Bucket=F, bucketNum = 5,
+                            bucketMax = 100, cv.option="CT", cv.Honest=T, minsize = 2L, 
+                            split.alpha = 0.5, cv.alpha = 0.5,
+                            sample.size.total = floor(nrow(dataTrain) / 2), sample.size.train.frac = .5,
+                            mtry = ceiling(ncol(dataTrain)/3), nodesize = 3, num.trees= 5,ncolx=p,ncov_sample=p) 
+
+
+ind <- sample(1:n,floor(n/2),replace=F)
+honestTree <- honest.causalTree(formula1, data=dataTrain[ind ,], treatment = dataTrain$D[ind ], 
+                                est_data = dataTrain[-ind, ], 
+                                est_treatment =  dataTrain$D[-ind ], 
+                                split.Rule = "CT", split.Honest = T, 
+                                HonestSampleSize = nrow(dataTrain[-ind, ]), 
+                                split.Bucket = T, cv.option = "CT")
+
+ honestTree$cptable
+```
+
+```{r}
+opcp <-  honestTree$cptable[,1][which.min(honestTree$cptable[,4])]
+opTree <- prune(honestTree, opcp)
+```
+
+
+```{r fig.width=7, fig.height=6}
+rpart.plot(opTree)
+```
+
+
+```{r fig.width=7, fig.height=6}
+out <- matrix(0,1,out_len )
+#### Forest
+s=floor(0.7*n)
+ntree=300
+
+for(b in 1:ntree){
+  ind <- sample(1:n,s,replace=F)
+  dataTrain <- as.data.frame(cbind(X,Y,D))[ind,]
+  ind <- sample(1:s,floor(s/2),replace=F)
+  honestTree <- honest.causalTree(formula1, data=dataTrain[ind ,], treatment = dataTrain$D[ind ], 
+                                  est_data = dataTrain[-ind, ], 
+                                  est_treatment =  dataTrain$D[-ind ], 
+                                  split.Rule = "CT", split.Honest = T, 
+                                  HonestSampleSize = nrow(dataTrain[-ind, ]), 
+                                  split.Bucket = T, cv.option = "CT")
+  opcp <-  honestTree$cptable[,1][which.min(honestTree$cptable[,4])]
+  opTree <- prune(honestTree, opcp)
+out <- out + predict(opTree, newdata=as.data.frame(X.test))
+}
+out <- out /ntree
+```
+
+```{r fig.width=7, fig.height=6}
+plot(X.test[,1],out, ylim = range(out, 0, 2), xlab = "x", ylab = "tau", type = "l")
+lines(X.test[,1], pmax(0, X.test[,1]), col = 2, lty = 2)
+```
