@@ -10,6 +10,12 @@ library("MASS")
 library("mnormt")
 library(hdm)
 library(AER)
+library(car)
+update.packages("Rcpp")
+
+
+
+
 ### Simulation parameters
 set.seed(13571113)
 p_x = 200 ## number of controls
@@ -22,7 +28,7 @@ split = runif(n)
 cvgroup = as.numeric(cut(split,quantile(split,probs = seq(0, 1, 1/K)),include.lowest = T))  
 
 ##number of MC replications
-MC =1000
+MC =2000
 Results = matrix(ncol=3, nrow=MC)
 
 out = NULL
@@ -126,9 +132,9 @@ for (kk in 1:MC){
  
   ### METHOD 0: selection, alternative (Non-orthogonal)
   ## select all the controls selected by the two Lasso
-  sel = (abs(rD_x$coefficients[2:(dim(x)[2]+1)])> 10^(-6))*1 + (rY_x$coefficients[2:(dim(x)[2]+1)]> 10^(-6))*1
+  sel = (abs(rD_xz$coefficients[(2+dim(z)[2]):(1+dim(x)[2]+dim(z)[2])])> 10^(-6))*1 + (rY_x$coefficients[2:(dim(x)[2]+1)]> 10^(-6))*1
   sel[sel ==2] <- 1 
-  sel_z = (rD_x$coefficients[(2+dim(x)[2]):(1+dim(x)[2]+dim(z)[2])] > 10^(-6))*1 
+  sel_z = (rD_xz$coefficients[2:(dim(z)[2])] > 10^(-6))*1 
   ## Do TSLS 
   x_sel = x[,sel==1]
   z_sel = z[,sel_z==1]
@@ -205,7 +211,7 @@ for (kk in 1:MC){
   outK1[,2] <- outK1[,2] +(  outK1[,1] -   coef1  )^2
   outKK2 <-  rbind(outKK2,c(coef1, mean(  outK1[,2]),coef1/mean(  outK1[,2])))
  
- 
+ cat(paste0("iteration", kk , "\n"))
 }
 
 
@@ -294,48 +300,7 @@ stdev=1
 grid.arrange(get.plot(data_res,1,"Naive", 1), get.plot(data_res,2,"Immunized",1), get.plot(data_res,3,"Oracle",1), ncol=3)
 
 grid.arrange(get.plot(data_res,4,"Cross-fitted med.",1),get.plot(data_res,5,"Cross-fitted mean", 1), ncol=2)
-
-
 ###### ##### 
-
-
-
-library(BLPestimatoR)
-
-
-
-library(xtable)
-
-
-table(out)
-
-
-
-
-
-###### 
-install.packages("Rmosek", type="source")
-
-
-library(devtools)
-install_github("cran/Rmosek")
-install_github("cran/hdm")
-
-libra
-install.packages('C:/Users/gaillac/Downloads/hdm_0.2.3.tar.gz', repos = NULL, type="source")
-install.packages('C:/Users/gaillac/Downloads/Rmosek_1.2.5.1.tar.gz', repos = NULL, type="source")
-
-install.packages("gpuR")
-
-install_github("cdeterman/gpuR")
-devtools::install_github("cdeterman/RViennaCL")
-library("gpuR")
-# verify you have valid GPUs
-detectGPUs()
-set.seed(123)
-gpuA <- gpuMatrix(rnorm(16), nrow=4, ncol=4)
-gpuB <- gpuA %*% gpuA
-
 
 
 
