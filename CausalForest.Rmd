@@ -1,6 +1,4 @@
 
-
-
 ---
 title: "Simulations Causal Forests"
 output: pdf_document

@@ -1,0 +1,511 @@
+---
+title: "High-Dimension and Endogeneity"
+header-includes:
+  - \usepackage{bbm, lmodern,amsmath,amssymb,enumitem,listings,enumerate}
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This presents empirical applications of the linear instrumental variables (IV) model with many covariates $(p^x >>n)$ and many instruments $(p^z >>n)$ based on the estimators analysed in Belloni et al. (2012b) and Chernozhukov et al. (2015b). The main package in the hdm R package avalaible at https://cran.r-project.org/web/packages/hdm/index.html. In particular, we strongly encourage to read the vignette https://cran.r-project.org/web/packages/hdm/vignettes/hdm.pdf.
+
+## Simulation Study
+
+These simulations illustrate two points:
+
+* the naive post-selection estimator suffers from a large regularization bias;
+
+* the cross-fitting estimator trades off a large bias for a smaller MSE compared to the immunized estimator that uses the whole sample.
+ 
+ 
+ 
+```{r}
+library("ggplot2")
+library("gridExtra")
+library("MASS")
+library("mnormt")
+library(hdm)
+library(AER)
+library(car)
+library("Rcpp")
+```
+
+
+
+We reproduce the DGP of \cite{ChernozhukovHansenSpindler2015}: namely i.i.d observations $(Y_i,D_i,Z_i,X_i)^n_{i=1}$, where the number of controls is set to 200, the number of instruments to 150, the number of observations to 202.
+ 
+```{r}
+### Simulation parameters
+set.seed(135711)
+p_x = 200 ## number of controls
+p_z = 150 ## number of instruments 
+n = 202 ## total sample size
+K = 2 # nb folds
+```
+
+$$\begin{align}
+Y_i = &\tau_0 D_i + X_i^{'} \beta_0 + 2 \varepsilon_i \\
+D_i = &X_i^{T} \gamma_0 + Z_i^{'} \delta_0 + U_i\\
+Z_i =& \Pi X_i + 0.125 \zeta_i,
+\end{align}$$
+
+where 
+$$   \left(\begin{array}{c} \varepsilon_i \\ u_i \\ \zeta_i \\ x_i \end{array} \right) \sim \mathcal{N} \left( 0 , \left(
+ \begin{array}{cccc}1  & 0.6 & 0 & 0\\ 0.6  & 1 & 0 & 0\\ 0  & 0 & I_{p^{z}} & 0\\ 0  & 0 & 0& \Sigma  \end{array} \right) \right)
+ $$
+where:
+* $\Sigma$  is a $p^{x} \times p^{x}$ matrix with $\Sigma_{kj} = (0.5)^{|j-k|}$ and $I_{p^{z}}$ the $p^{z} \times p^{z}$  identity matrix. 
+
+```{r} 
+  ### GENERATE DATA
+  means <- c(0,0,0,0)
+  Sigma <- matrix(0,p_x,p_x)
+  for (i in 1:p_x){
+    for (j in 1:p_x){
+      Sigma[i,j] <- (1/2)^{abs(i-j)}
+    }
+  }
+   
+  sigmas <- matrix(0,2+p_z+p_x, 2+p_z+p_x)
+  sigmas[1:2,1:2] <- matrix(c(1,0.6,0.6,1), 2,2  )
+  sigmas[3:(2+p_z),3:(2+p_z)] <- diag(1,p_z,p_z)
+  sigmas[(3+p_z):(2+p_z+p_x),(3+p_z):(2+p_z+p_x)] <-Sigma
+``` 
+
+*  The most interesting part of the DGP is the form of the coefficients $\beta_0$, $\gamma_0$, and $\delta_0$:
+
+$$\beta_{0j} = \left\{
+      \begin{aligned}
+&  1/ (9\nu) \text{,   } j < 4 \\
+& 1/ (j^2\nu) \text{,   elsewhere}
+\end{aligned}\right.\quad, \text{where} \ \nu = \dfrac{4}{9} + \sum_{k=5}^{p^{x}}\dfrac{1}{k^2},$$
+$\gamma_0 =\beta_0$, and $\delta_{0j} = 3/j^2$. We are in an approximately sparse setting for both equations.
+
+
+```{r}
+  nu <- 4/9 + sum((1:p_x)^(-2))
+  beta <- matrix(0,1,p_x)
+  beta[1,1:4] <-  1/(9*nu)
+  beta[1,5:p_x] <-  1/nu*(5:p_x)^(-2)
+  
+  delta <- matrix(3*(1:p_z)^(-2),p_z,1)
+```   
+
+* $\Pi = \left[  I_{p^{z}}, 0_{ p^{z}\times (p^{x} -p^{z}) } \right]$ and $\tau_0 = 1.5$.
+
+```{r}
+  Pi_m <- cbind(diag(1,p_z,p_z),matrix(0,p_z,(p_x-p_z)))
+
+  var <- rmnorm(n, mean = rep(0, nrow(sigmas)), varcov = sigmas)
+  dim(var )
+  eps <- var[,1]
+  us <- var[,2]
+  zetas <- var[,3:(2+p_z)]
+  x <- var[,(3+p_z):(2+p_z+p_x)]
+  gamma = beta
+  tau = 1.5
+  z <- Pi_m%*%t(x) + 0.125*t(zetas)
+  d <- x%*%t(gamma) +  t(z)%*%delta + us
+  y <- tau *d + x%*%t(beta) + 2*eps
+  z <- t(z)
+```  
+
+ 
+An ``oracle" estimator, where the coefficients of the nuisance parameters are known, and we run standard IV regression of $Y_i - \mathbb{E}\left[Y_i|X_i\right]$ on $D_i -  \mathbb{E}\left[D_i|X_i\right]$ using $\zeta_i^{'}\delta_0$ as instruments;
+  
+```{r}  
+  ### METHOD 0bis: oracle
+  zO =z%*%delta
+  xO =x%*%t(beta) 
+  ivfit.lasso = tsls(y=y,d=d, x=xO, z=zO)
+  c(ivfit.lasso$coef[1], ivfit.lasso$se[1],ivfit.lasso$coef[1]/ivfit.lasso$se[1])
+```
+
+A double-selection estimator based on the Lasso as described in the course: 
+
+```{r}
+  ### METHOD 1: Double-Selection, no sample-splitting
+  ## Do LASSO of D on X to obtain gamma
+  W= cbind(z,x)
+  rD_xz = rlasso(d ~ W)
+  ind.dzx <- rD_xz$index
+```
+
+```{r}
+  ## Do LASSO of Y on X to obtain theta, and extract residuals
+  rY_x = rlasso(y ~ x)
+  rY = rY_x$residuals
+``` 
+
+```{r}
+  ## Build D_hat from estimated gamma and delta
+  ### compute the projection of d on vect(W[selected covariates using lasso])
+  PZ <-  W[, ind.dzx] %*% MASS::ginv(t( W[, ind.dzx]) %*%  W[, ind.dzx]) %*%  t(W[, ind.dzx]) %*% d
+```
+
+Do Lasso or Post-Lasso Regression of
+$D_i$ on $(X_i,Z_i)$  to obtain $\hat{\gamma}$ and $\hat{\delta}$;
+
+```{r} 
+    ## do LASSO of this predicted d using these covariates on x (d_hat on X) to get nu
+  rPZ.x <- rlasso(x, PZ)
+  ind.PZx <- rPZ.x$index
+```
+
+```{r}
+    ## extract the residuals of the lasso of d_hat on X
+  if (sum(ind.PZx) == 0) {
+    Dr <- d - mean(d)
+  } else {
+    # Dr <- d - predict(rPZ.x) 
+    Dr <- d - x[,ind.PZx]%*%MASS::ginv(t(x[,ind.PZx])%*%x[,ind.PZx])%*%t(x[,ind.PZx])%*%PZ
+    
+  }
+```
+
+```{r}
+  ## extract the residuals of the lasso of Y on X 
+  if (sum(rY_x$index) == 0) {
+    Yr <- y - mean(y)
+  } else {
+    Yr <- rY
+  }
+```
+
+```{r}
+  ## extract the residuals of the lasso of the projection of  Y on X 
+  if (sum(rPZ.x$index) == 0) {
+    Zr <- PZ - mean(x)
+  } else {
+    Zr <- rPZ.x$residuals
+  }
+```
+
+
+Then 
+$$\check \tau =\text{argmin}_{\tau \in \mathbb{R} } \left\| \sqrt{n}\widehat{M}(\tau,\hat{\eta})   \right\|^2  = \left[ \widehat{\Gamma_1}(\hat{\eta})^{'}\widehat{\Gamma_1}(\hat{\eta})\right]^{-1}\widehat{\Gamma_1}(\hat{\eta})^{'}\widehat{\Gamma_2}(\hat{\eta}).$$
+
+Note that this Step amounts to perform 2SLS using the residuals  $Y_i - \hat{\theta}'X_i$ from Step \ref{eq:Alg2} as running variable, the residuals  $D_i -\hat{D}_i$ from Step \ref{eq:Alg1} as covariate, and the residuals  $\hat{D}_i - \hat{\nu}'X_i$  as instruments.
+
+```{r}
+  ## Do TSLS of the residuals of Y/X on residuals of D/X using residuals of Dhat/X as instruments
+  ivfit.lasso <-  tsls(y = Yr, d = Dr, x = NULL, z = Zr, intercept = FALSE)
+  # coef <- as.vector( ivfit.lasso$coefficient)
+  # ivfit.lasso = tsls(y=rY,d=rD1, x=NULL, z=rD_res, intercept = FALSE)
+   c(ivfit.lasso$coef[1], ivfit.lasso$se[1],ivfit.lasso$coef[1]/ivfit.lasso$se[1])
+```
+
+```{r}
+  ### Build in function to do all this.... 
+  ivfit.lasso2 = rlassoIV(y ~ x + d | x + z, select.X=TRUE, select.Z=TRUE)
+   c(ivfit.lasso2$coef, ivfit.lasso2$se,ivfit.lasso2$coef/ivfit.lasso2$se )
+```
+
+
+A naive non-orthogonal estimator, where we use Lasso regression of $D$ on $(X,Z)$ to obtain the identities of the controls and instruments that enter the instrumental equation: $I^{D}_X= \{ j : \hat{\delta}_j \neq 0\}$, $I^{D}_Z= \{ j : \hat{\delta}_j \neq 0\}$. We run Lasso regression of $Y$ on $X$ to obtain the identities of the controls that enter the outcome equation: $I^{Y}_X= \{ j : \hat{\delta}_j \neq 0\} $. We then run 2SLS estimator of $Y$ on $D$ and the selected controls and instruments $I^{D}_X\cup I^{Y}_X$ and $I^{D}_Z$.
+    
+    
+```{r}
+  ### METHOD 0: selection, alternative (Non-orthogonal)
+  ## select all the controls selected by the two Lasso
+  sel = (abs(rD_xz$coefficients[(2+dim(z)[2]):(1+dim(x)[2]+dim(z)[2])])> 10^(-6))*1 + (rY_x$coefficients[2:(dim(x)[2]+1)]> 10^(-6))*1
+  sel[sel ==2] <- 1 
+  sel_z = (rD_xz$coefficients[2:(dim(z)[2])] > 10^(-6))*1 
+  ## Do TSLS 
+  x_sel = x[,sel==1]
+  z_sel = z[,sel_z==1]
+  if(sum(sel)>0 & sum(sel_z)>0){
+     ivfit.lm = ivreg(y ~ d  + x_sel| z_sel + x_sel)
+   }else if (sum(sel)==0 & sum(sel_z)>0){
+     ivfit.lm = ivreg(y ~ d  | z_sel)
+   }
+  se <-  coef(summary(ivfit.lm))[2, "Std. Error"]
+  c(ivfit.lm$coef["d"],  se ,ivfit.lm$coef["d"]/se)
+```  
+
+
+Two double-selection estimator based on the Lasso with cross-fitting ($K=3$) as described in Section \ref{sec:crossfit}, but:
+* one aggregating with the mean:
+   $$\begin{align}
+      \hat{\tau} = &\dfrac{1}{K}\sum_{k=1}^K \hat{\tau}_k \\
+    \hat{\sigma}^{2,mean} =& \dfrac{1}{K} \left(\sum_{k=1}^K \hat{\sigma}^{2}_k + \left( \hat{\tau}_k -  \hat{\tau}\right)^2\right) . 
+     \end{align}$$
+     
+* one aggregating with the median:
+   $$ \begin{align}
+   \hat{\tau} = &\text{median}\left( \{\hat{\tau}_k\}_{k=1}^{K} \right)\\
+ \hat{\sigma}^{2,\text{median}} =&\text{median}\left( \left\{ \hat{\sigma}^{2}_k + \left( \hat{\tau}_k -  \hat{\tau}\right)^2 \right\}_{k=1}^{K} \right) . 
+ \end{align}$$
+The second one should be more robust to outliers. 
+
+```{r}
+#### Splitting decision rules
+split = runif(n)
+cvgroup = as.numeric(cut(split,quantile(split,probs = seq(0, 1, 1/K)),include.lowest = T))  
+```
+
+
+```{r}  
+ ### METHOD 2: Double Selection with Sample Splitting
+ outK = matrix(ncol=3, nrow=K)
+ k=1
+ for(k in 1:K){
+   Ik = cvgroup==k # Separate the sample
+   NIk = cvgroup!=k
+   ind <- matrix(1,dim(d)[1],1)
+   ind_x <- matrix(1,dim(x[Ik,])[1],1)
+ 
+   ## Do LASSO of D on X to obtain gamma
+   W= cbind(z,x)
+   rD_xz = rlasso(d[NIk,] ~   W[NIk,] )
+   ind.dzx <- rD_xz$index
+   ## Do LASSO of Y on X to obtain theta, and extract residuals
+   rY_x = rlasso(y[NIk,] ~ x[NIk,])
+   ind.Y_x <- rY_x$index
+   ## Build D_hat from estimated gamma and delta
+   PZ <-  W[, ind.dzx] %*% MASS::ginv(t( W[, ind.dzx]) %*%  W[, ind.dzx]) %*%  t(W[, ind.dzx]) %*% d
+   ## regress d_hat on X to get nu
+   rPZ.x <- rlasso(x[NIk,], PZ[NIk,])
+   ind.PZx <- rPZ.x$index
+ 
+   ## extract the residuals of the lasso of d_hat on X
+   if (sum(ind.PZx) == 0) {
+     Dr <- d[Ik,] - mean(d[Ik,])
+   } else {
+     # Dr <- d[Ik,] - predict(rPZ.x, newdata=x[Ik,])
+     Dr <- d[Ik,] - x[Ik,   ind.PZx] %*% (MASS::ginv(t( x[NIk,   ind.PZx]) %*%  x[NIk,   ind.PZx]) %*%  t(x[NIk,   ind.PZx]) %*% d[NIk,])
+    }
+   
+   ## extract the residuals of the lasso of Y on X 
+   if (sum(rY_x$index) == 0) {
+     Yr <- y[Ik,] - mean(y[Ik,])
+   } else {
+     # Yr <-  y[Ik,] - predict(rY_x, newdata=x[Ik,])
+     Yr <-  y[Ik,] - x[Ik,   ind.Y_x] %*% (MASS::ginv(t( x[NIk,   ind.Y_x]) %*%  x[NIk,   ind.Y_x]) %*%  t(x[NIk,   ind.Y_x]) %*% y[NIk,])
+     
+   }
+   
+   ## extract the residuals of the lasso of the projection of  Y on W on X
+   if (sum(rPZ.x$index) == 0) {
+     Zr <- PZ[Ik,] - mean(x[Ik,])
+   } else {
+     # Zr <-  PZ[Ik,] -predict(rPZ.x, newdata=x[Ik,])
+     Zr <-  PZ[Ik,] - x[Ik,   ind.PZx] %*% (MASS::ginv(t( x[NIk,   ind.PZx]) %*%  x[NIk,   ind.PZx]) %*%  t(x[NIk,   ind.PZx]) %*% PZ[NIk,])
+     
+   }
+   
+   ## Do TSLS 
+   ivfit.lasso<-   tsls(y = Yr, d = Dr, x = NULL, z = Zr, intercept = FALSE)
+   outK[k,] <- c(ivfit.lasso$coef[1], ivfit.lasso$se[1],ivfit.lasso$coef[1]/ivfit.lasso$se[1])
+  }
+```  
+ 
+```{r}  
+  outK1 <- outK
+  coef1 <- median( outK1[,1])
+  outK1[,2] <- outK1[,2] +(  outK1[,1] -   coef1  )^2
+  c(coef1, median(  outK1[,2]),coef1/median(  outK1[,2]))
+ 
+  outK1 <- outK
+  coef1 <- mean( outK1[,1])
+  outK1[,2] <- outK1[,2] +(  outK1[,1] -   coef1  )^2
+  c(coef1, mean(  outK1[,2]),coef1/mean(  outK1[,2]))
+```
+
+
+## Applications to Logit Demand Model
+
+We introduce the logit demand model in the context where we only observe market share data (see the seminal papers by Berry et al. (1995), Berry (1994) and Nevo (2001), and the datasets provided in the Github).
+
+The model describes demand for a product in the ``characteristic space'', namely a product can be characterized by a number of features (for a car: efficiency, type of oil, power, ect) and consumers value those characteristics. The consumer can choose among $J$ products and maximizes his utility of consuming this good. Individual random utility for choosing good $j \in \{0,\dots,J\}$ is modeled as 
+$$u_{ij} = X_j^{'} \beta_0 - \tau_0 P_j + \zeta_j + \varepsilon_{ij}, \quad (\varepsilon_{ij} ,\zeta_j ) \perp X_j$$
+and $\varepsilon_{ij} \sim F(\cdot) = \exp(-\exp(-\cdot))$ type I extreme value.
+
+Show that
+$$ P_{ij} = \dfrac{\exp\left( \delta_j\right)}{1 +  \sum_{k=1}^{J}\exp\left( \delta_k\right)}, \quad \delta_j = X_j^{T} \beta_0 - \tau_0 P_j + \zeta_j.$$
+
+
+Moreover, the econometrician does not observe individual choices, but only market shares of product $j$: $s_{jt} = Q_{jt}/M_t$ at period t, where $M_t$ is the total number of households in the market, and $Q_{jt}$ the number choosing the product j in period t. This yields 
+$$s_{jt}= \dfrac{ \exp\left( X_{jt}^{'} \beta_0 - \tau_0 P_{jt} + \zeta_{jt}\right)} {1 + \sum_{k=1}^{J}\left( X_{kt}^{'} \beta_0 - \tau_0 P_{kt} + \zeta_{kt} \right)},$$
+thus, using $s_j/s_0$ and assuming that market shares are non zero, we get
+$$\begin{equation}
+\log(s_j) - \log(s_0) = X_{jt}^{'} \beta_0 - \tau_0 P_{jt} + \zeta_{jt}.
+\end{equation}$$
+
+However, price may be correlated with unobserved component $\zeta_{jt}$ such that OLS would lead to an estimate of $\tau_0$ which is biased towards zero. We use the instrumental equation:
+$$\begin{equation}
+ P_{jt}  = Z_{jt}^{'} \delta_0 + X_{jt}^{'} \gamma_0 + u_{jt}.
+\end{equation}$$
+
+Here, controls include a constant, an air conditioning dummy, horsepower divided by weight, miles per dollar, and vehicle size. In Berry et al. (1995), they suggest to use the so-called ``BLP instruments" namely characteristics of other products, which may satisfy an exclusion restriction:  for any $j'\neq j$ and $t'$, as well as any function of those characteristics. The justification is that, if a product is close in the "characteristics space" to its competitors, it may impact the markups, then the price (however, one should prefer cost based instruments, rarely available). Thus, we are left with a very-high dimensional set of potential instruments for $P_{jt}$.
+
+Originally, Berry et al. (1995) solve this problem of dimension taking sums of product
+characteristics formed by summing over products excluding product $j$
+$$Z_{k,jt} = \left( \sum_{j' \neq j, j'\in \mathcal{I}_f} X_{j',jt} ,  \sum_{j' \neq j, j' \notin \mathcal{I}_f} X_{j',jt}\right),$$
+where $\mathcal{I}_f$ is the set of products produced by firm $f$. This yields a set of 10 instruments, that, following \cite{ChernozhukovHansenSpindler2015}, we call the ``baseline".
+
+
+
+```{r}  
+## load dataset, of import it from /data/ in the Github repository
+load("~/GitHub/hdmetrics/data/data_BLP.RData")
+BLP <- as.data.frame(BLP)
+head(BLP)
+```  
+
+```{r}  
+## Note: despite what the hdm package's documentation says, price is price - mean(price) (in /1000 1983$).
+## If you compare the quantiles of price with Table II from BLP (1995), you see that everything is
+## shifted down by 11.761
+BLP$BLP.price <- BLP$BLP.price + 11.761
+## (check with table II from BLP 1995)
+quantile(BLP$BLP.price)
+``` 
+
+```{r} 
+quantile(BLP$BLP.hpwt)
+```
+
+```{r} 
+quantile(BLP$BLP.mpd)
+```
+
+```{r} 
+quantile(BLP$BLP.y)
+```
+
+```{r} 
+quantile(BLP$BLP.mpg)
+```
+
+```{r} 
+BLP$BLP.mpd <- BLP$BLP.mpd*10
+BLP$BLP.mpg <- BLP$BLP.mpg*10
+Result = matrix(ncol=3, nrow=6)
+```
+
+
+```{r}
+colnames(BLP)
+```
+
+But tools developed in the previous section allow to consider wider possibilities. We augment the set of potential controls with all first order interactions of the baseline variables, quadratics and cubics in all continuous baseline variables, and a time trend that yields a total of 24 ``augmented" controls. Then sums of these characteristics define potential instruments following  Berry et al. (1995), which yields 48 potential instruments. 
+
+
+```{r}
+## Baseline OLS IV
+baseline = colnames(BLP)[64:73]
+## Augmented  OLS IV
+augmented = colnames(BLP)[16:63]
+controls =colnames(BLP)[c(c(7:8),c(10:11))]
+# controls =colnames(BLP)[c(8:11)]
+controls_cont = controls[-1]
+```
+
+
+
+The identity of the controls and instruments selected in the  ``augmented" set reveals that these are important nonlinearities missed by the baseline set of variables.
+
+```{r}
+## log shares
+BLP$s <- log(BLP$BLP.share)
+endog = "BLP.price"
+y_n <- "s"
+head(BLP)
+```
+
+
+Moreover, the selection method give more plausible estimates with respect to the important quantities of the model that are price elasticities:
+$$\dfrac{\partial s_{j}}{\partial P_{k}}\dfrac{P_k}{s_j} = \left\{  \begin{array}{cc} - \tau_0 P_j(1-S_j) & \text{if} \ j = k \\ \tau_0 P_k s_k  \ \text{otherwise}  \end{array} \right.$$
+Not to mention the classical problems with those specific forms (own-price elasticities quasi proportional to prices, symmetry of cross price elasticity with respect to products), facing inelastic demand is inconsistent with profit maximizing price choice in this framework, thus theory would predict that demand should be elastic for all products, which is not the case of estimates without selection in Table 3. Estimators with selection give in that sense much more plausible estimates.
+
+
+
+```{r}
+form <- paste(y_n, paste(c(controls,endog), collapse=" + "), sep=" ~ ")
+fit.ols.b <- lm(as.formula(form), data=BLP)
+sds <- coef(summary(fit.ols.b ))[, "Std. Error"]
+## own price elasticities 
+elas <-  fit.ols.b$coefficients["BLP.price"]*BLP[,"BLP.price"]*(1-BLP[,"BLP.share" ])
+nb.ine <- sum(elas >= -1)
+Result[1,] <- c(fit.ols.b$coefficients["BLP.price"], sds["BLP.price"],nb.ine)
+```
+
+Baseline 2SLS
+```{r}
+form <- paste(y_n, paste(c(controls,endog), collapse=" + "), sep=" ~ ")
+form <- paste(form, paste(c(baseline), collapse=" + "), sep=" | ")
+fit.tsls.b <- tsls(as.formula(form), data=BLP)
+## own price elasticities 
+elas <-  fit.tsls.b$coefficients["BLP.price",]*BLP[,"BLP.price"]*(1-BLP[,"BLP.share" ])
+nb.ine <- sum(elas >= -1)
+Result[2,] <- c(fit.tsls.b$coefficients["BLP.price",], fit.tsls.b $se["BLP.price"],nb.ine)
+```
+
+
+Augmented OLS
+```{r}
+cont <-  paste(paste("(",paste(c(controls), collapse=" + ")),")^3")
+form <- paste(y_n,paste(cont,"+ BLP.trend + BLP.air + BLP.price"), sep=" ~ ")
+fit.ols.b <- lm(as.formula(form), data=BLP)
+sds <- coef(summary(fit.ols.b ))[, "Std. Error"]
+## own price elasticities 
+elas <-  fit.ols.b$coefficients["BLP.price"]*BLP[,"BLP.price"]*(1-BLP[,"BLP.share" ])
+nb.ine <- sum(elas >= -1)
+Result[3,] <- c(fit.ols.b$coefficients["BLP.price"], sds["BLP.price"],nb.ine)
+```
+
+Augmented TSLS
+```{r}
+cont <-  paste(paste("(",paste(c(controls), collapse=" + ")),")^3")
+form <- paste(y_n,paste(cont,"+ BLP.trend + BLP.air + BLP.price"), sep=" ~ ")
+form <- paste(form, paste(c(augmented), collapse=" + "), sep=" | ")
+fit.tsls.b  <-  tsls(as.formula(form), data=BLP)
+## own price elasticities 
+elas <-  fit.tsls.b$coefficients["BLP.price",]*BLP[,"BLP.price"]*(1-BLP[,"BLP.share" ])
+nb.ine <- sum(elas >= -1)
+Result[4,] <- c(fit.tsls.b$coefficients["BLP.price",], fit.tsls.b $se["BLP.price"],nb.ine)
+```
+
+2SLS Estimates With Double Selection
+```{r}
+## Baseline 2SLS Selection
+fit.lasso.b <-rlassoIV(x=as.matrix(BLP[,controls]),
+                         d=as.matrix(BLP[,endog]),y=as.matrix(BLP[,y_n]),z=as.matrix(BLP[,baseline]), select.X=TRUE, select.Z=TRUE)
+## own price elasticities 
+elas <- fit.lasso.b$coefficients*BLP[,"BLP.price"]*(1-BLP[,"BLP.share" ])
+nb.ine <- sum(elas >= -1)
+Result[5,] <- c(fit.lasso.b$coefficients,fit.lasso.b$se,nb.ine)
+```
+
+Augmented 2SLS Selection
+```{r}
+cont <-  paste("s ~ ",paste(paste0("(",paste(c(controls), collapse=" + ")),")^3"))
+xsel <- model.matrix(as.formula(cont), data = BLP)
+x <- cbind(xsel[,-1],BLP[,c("BLP.air")])
+dim(x)
+fit.lasso.aug <-rlassoIV(x=x,
+                          d=as.matrix(BLP[,endog]),y=as.matrix(BLP[,y_n]),z=as.matrix(BLP[,augmented]), select.X=TRUE, select.Z=TRUE)
+## own price elasticities 
+elas <- fit.lasso.aug$coefficients*BLP[,"BLP.price"]*(1-BLP[,"BLP.share" ])
+nb.ine <- sum(elas >= -1)
+Result[6,] <- c(fit.lasso.aug$coefficients,fit.lasso.aug$se,nb.ine)
+```
+
+
+```{r}
+Result <- as.data.frame(Result)
+row.names(Result) = c("Baseline OLS","Baseline 2SLS","Augmented OLS"
+                           , "Augmented 2SLS","Baseline 2SLS Selection","Augmented 2SLS Selection")
+colnames(Result) <- c("Price Coefficient","Standard Error","Number Inelastic")
+print(Result)
+```
+
+We perform the same type of analysis on a dataset (semifrabricated) from Nevo 2001 on the ready to eat cereal industry (see dataset cerealps3.csv). Table 4 exhibits similar conclusions, using the set of constructed instruments (labelled "z1-z20"), and in "Augmented 2SLS Selection", quadratics and cubics in all these instruments. 
+
+
+
