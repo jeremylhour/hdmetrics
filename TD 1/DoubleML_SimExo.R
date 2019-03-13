@@ -1,0 +1,136 @@
+### High-Dimensional Econometrics
+### Jeremy L Hour
+### 11/02/2019
+
+### Set working directory
+setwd("//ulysse/users/JL.HOUR/1A_These/B. ENSAE Classes/Cours3A/hdmetrics")
+
+rm(list=ls())
+set.seed(03101989)
+
+
+### 0. Settings
+
+### Load packages
+library("ggplot2")
+library("gridExtra")
+library("MASS")
+
+### Load user-defined functions
+source("functions/DataSim.R") 
+source("functions/LassoFISTA.R")
+
+### Simulation parameters
+R = 100 # nb simulations
+n = 200 # sample size
+p = 150 # nb variables
+K = 5 # nb folds
+a = .5 # ATT
+
+split = runif(n)
+cvgroup = as.numeric(cut(split,quantile(split,probs = seq(0, 1, 1/K)),include.lowest = T)) # Group assignment for sample splitting
+
+g = .1/log(max(p,n))
+lambda = 2.2*qnorm(1-.5*g/p)/sqrt(n) # Lasso penalty level
+
+Results = matrix(ncol=3, nrow=R)
+stdev = vector(length=R)
+t_start = Sys.time()
+pb = txtProgressBar(style = 3)
+
+for(r in 1:R){
+  ### GENERATE DATA
+  data = DataSim(n=n,p=p,Ry=.3,Rd=.7)
+  X = data$X; y = data$y; d = data$d
+  
+  ### METHOD 1: Naive selection
+  lassoselec = LassoFISTA(y=y,X=cbind(d,X),nopen=c(1,2),lambda=lambda) # Do not penalize the constant
+  Snaive = which(lassoselec$beta != 0)
+  Snaive = Snaive[!Snaive %in% c(1,2)] # delete intercept and treatment variable
+  if(length(Snaive)==0){
+    naivefit = lm(y ~ d)
+  } else {
+    naivefit = lm(y ~ d + X[,Snaive])
+  }
+  
+  
+  ### METHOD 2: Double-Selection, no sample-splitting (TO BE COMPLETED)
+  # A. Selection on Treatment
+  ###
+  
+  # B. Selection on Outcome
+  ###
+  
+  # C. Compute Post-Double-Selection
+  ###
+  
+  # D. Compute sd (optional) 
+  ###
+  
+  
+  ### METHOD 3: Double Selection with Sample Splitting (TO BE COMPLETED)
+  theta = vector(length=K)
+  for(k in 1:K){
+    Ik = cvgroup==k # Separate the sample
+    NIk = cvgroup!=k
+    
+    # 0. Adjust Lasso penalty level
+    gstar = .1/log(max(p,sum(NIk)))
+    lambdastar = 2.2*qnorm(1-.5*g/p)/sqrt(sum(NIk)) # Lasso penalty level
+    
+    # Abis. Selection on Treatment
+    ###
+    
+    # Bbis. Selection on Outcome
+    ###
+    
+    # Cbis. Compute Post-Double-Selection
+    ###
+    
+    # D. Target param on left-out sample
+    ###
+    
+    theta[k] = 0
+  }
+  
+  
+  ### COLLECTING RESULTS (TO BE COMPLETED)
+  Results[r,] = c(naivefit$coef['d'],
+                  0,
+                  mean(theta)) 
+  
+  setTxtProgressBar(pb, r/R)
+}
+
+close(pb)
+print(Sys.time()-t_start)
+
+### COMPUTE BIAS AND RMSE
+StatDisplay = data.frame()
+StatDisplay[1:3,"bias"] = apply(Results-a,2,mean)
+StatDisplay[1:3,"RMSE"] = sqrt(apply((Results-a)^2,2,mean))
+row.names(StatDisplay) = c("Naive","Immunized","Immunized, Cross-fitted")
+print(StatDisplay)
+
+### DRAW CHARTS
+id = c(mapply(function(x) rep(x,R),1:3))
+val = c(Results)-a
+data_res = data.frame(val = val, model = id)
+
+M = max(abs(quantile(Results,.01,na.rm=T)),abs(quantile(Results,.99,na.rm=T)))
+lb = -1.1*M; ub = 1.1*M
+
+get.plot <- function(data,modelS,title="A Title",s){
+  plot_res <- ggplot(subset(data, (model==modelS)), aes(x=val)) + 
+    geom_histogram(binwidth = .02, alpha=.5, position='identity',fill="steelblue", aes(y = ..density..)) +
+    scale_x_continuous(limits=c(lb,ub), name="Treatment effect") +
+    ggtitle(title) + 
+    stat_function(fun = dnorm, args=list(mean=0, sd=s), colour="darkorchid3", size=1) +
+    theme(plot.title = element_text(lineheight=.8, face="bold"),legend.position="none")
+  return(plot_res)
+} # plot func
+
+pdf("plots/Immunized.pdf",width=14,height=4)
+grid.arrange(get.plot(data_res,1,"Naive Post-Selec", mean(stdev)), get.plot(data_res,2,"Double-Selec", mean(stdev)), get.plot(data_res,3,"Double-Selec, Cross-fitting", mean(stdev)), ncol=3)
+dev.off()
+
