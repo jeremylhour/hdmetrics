@@ -169,7 +169,10 @@ Z_i =&amp; \Pi X_i + 0.125 \zeta_i,
 \end{align}\]</span></p>
 <p>where <span class="math display">\[   \left(\begin{array}{c} \varepsilon_i \\ u_i \\ \zeta_i \\ x_i \end{array} \right) \sim \mathcal{N} \left( 0 , \left(
  \begin{array}{cccc}1  &amp; 0.6 &amp; 0 &amp; 0\\ 0.6  &amp; 1 &amp; 0 &amp; 0\\ 0  &amp; 0 &amp; I_{p^{z}} &amp; 0\\ 0  &amp; 0 &amp; 0&amp; \Sigma  \end{array} \right) \right)
- \]</span> where: * <span class="math inline">\(\Sigma\)</span> is a <span class="math inline">\(p^{x} \times p^{x}\)</span> matrix with <span class="math inline">\(\Sigma_{kj} = (0.5)^{|j-k|}\)</span> and <span class="math inline">\(I_{p^{z}}\)</span> the <span class="math inline">\(p^{z} \times p^{z}\)</span> identity matrix.</p>
+ \]</span> where:</p>
+<ul>
+<li><span class="math inline">\(\Sigma\)</span> is a <span class="math inline">\(p^{x} \times p^{x}\)</span> matrix with <span class="math inline">\(\Sigma_{kj} = (0.5)^{|j-k|}\)</span> and <span class="math inline">\(I_{p^{z}}\)</span> the <span class="math inline">\(p^{z} \times p^{z}\)</span> identity matrix.</li>
+</ul>
 <pre class="r"><code>  ### GENERATE DATA
   means &lt;- c(0,0,0,0)
   Sigma &lt;- matrix(0,p_x,p_x)
@@ -273,7 +276,7 @@ Z_i =&amp; \Pi X_i + 0.125 \zeta_i,
    c(ivfit.lasso2$coef, ivfit.lasso2$se,ivfit.lasso2$coef/ivfit.lasso2$se )</code></pre>
 <pre><code>##         d         d         d 
 ## 1.8078934 0.4126595 4.3810781</code></pre>
-<p>A naive non-orthogonal estimator, where we use Lasso regression of <span class="math inline">\(D\)</span> on <span class="math inline">\((X,Z)\)</span> to obtain the identities of the controls and instruments that enter the instrumental equation: <span class="math inline">\(I^{D}_X= \{ j : \hat{\delta}_j \neq 0\}\)</span>, <span class="math inline">\(I^{D}_Z= \{ j : \hat{\delta}_j \neq 0\}\)</span>. We run Lasso regression of <span class="math inline">\(Y\)</span> on <span class="math inline">\(X\)</span> to obtain the identities of the controls that enter the outcome equation: $I^{Y}_X= { j : _j 0} $. We then run 2SLS estimator of <span class="math inline">\(Y\)</span> on <span class="math inline">\(D\)</span> and the selected controls and instruments <span class="math inline">\(I^{D}_X\cup I^{Y}_X\)</span> and <span class="math inline">\(I^{D}_Z\)</span>.</p>
+<p>A naive non-orthogonal estimator, where we use Lasso regression of <span class="math inline">\(D\)</span> on <span class="math inline">\((X,Z)\)</span> to obtain the identities of the controls and instruments that enter the instrumental equation: <span class="math inline">\(I^{D}_X= \{ j : \hat{\delta}_j \neq 0\}\)</span>, <span class="math inline">\(I^{D}_Z= \{ j : \hat{\delta}_j \neq 0\}\)</span>. We run Lasso regression of <span class="math inline">\(Y\)</span> on <span class="math inline">\(X\)</span> to obtain the identities of the controls that enter the outcome equation: <span class="math inline">\(I^{Y}_X= \{ j : \hat{\delta}_j \neq 0\}\)</span>. We then run 2SLS estimator of <span class="math inline">\(Y\)</span> on <span class="math inline">\(D\)</span> and the selected controls and instruments <span class="math inline">\(I^{D}_X\cup I^{Y}_X\)</span> and <span class="math inline">\(I^{D}_Z\)</span>.</p>
 <pre class="r"><code>  ### METHOD 0: selection, alternative (Non-orthogonal)
   ## select all the controls selected by the two Lasso
   sel = (abs(rD_xz$coefficients[(2+dim(z)[2]):(1+dim(x)[2]+dim(z)[2])])&gt; 10^(-6))*1 + (rY_x$coefficients[2:(dim(x)[2]+1)]&gt; 10^(-6))*1
@@ -291,15 +294,16 @@ Z_i =&amp; \Pi X_i + 0.125 \zeta_i,
   c(ivfit.lm$coef[&quot;d&quot;],  se ,ivfit.lm$coef[&quot;d&quot;]/se)</code></pre>
 <pre><code>##         d                   d 
 ## 1.8210926 0.4058442 4.4871722</code></pre>
-<p>Two double-selection estimator based on the Lasso with cross-fitting (<span class="math inline">\(K=3\)</span>) as described in Section , but: * one aggregating with the mean: <span class="math display">\[\begin{align}
-      \hat{\tau} = &amp;\dfrac{1}{K}\sum_{k=1}^K \hat{\tau}_k \\
-    \hat{\sigma}^{2,mean} =&amp; \dfrac{1}{K} \left(\sum_{k=1}^K \hat{\sigma}^{2}_k + \left( \hat{\tau}_k -  \hat{\tau}\right)^2\right) . 
-     \end{align}\]</span></p>
+<p>Two double-selection estimator based on the Lasso with cross-fitting (<span class="math inline">\(K=3\)</span>) as described in Section , but:</p>
 <ul>
-<li>one aggregating with the median: <span class="math display">\[ \begin{align}
+<li><p>one aggregating with the mean: <span class="math display">\[\begin{align}
+  \hat{\tau} = &amp;\dfrac{1}{K}\sum_{k=1}^K \hat{\tau}_k \\
+\hat{\sigma}^{2,mean} =&amp; \dfrac{1}{K} \left(\sum_{k=1}^K \hat{\sigma}^{2}_k + \left( \hat{\tau}_k -  \hat{\tau}\right)^2\right) . 
+ \end{align}\]</span></p></li>
+<li><p>one aggregating with the median: <span class="math display">\[ \begin{align}
    \hat{\tau} = &amp;\text{median}\left( \{\hat{\tau}_k\}_{k=1}^{K} \right)\\
  \hat{\sigma}^{2,\text{median}} =&amp;\text{median}\left( \left\{ \hat{\sigma}^{2}_k + \left( \hat{\tau}_k -  \hat{\tau}\right)^2 \right\}_{k=1}^{K} \right) . 
- \end{align}\]</span> The second one should be more robust to outliers.</li>
+ \end{align}\]</span> The second one should be more robust to outliers.</p></li>
 </ul>
 <pre class="r"><code>#### Splitting decision rules
 split = runif(n)
