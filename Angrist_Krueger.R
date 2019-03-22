@@ -10,7 +10,7 @@ head(data)
 colnames(data) <- c("AGE","AGEQ","v3","EDUC","ENOCENT","ESOCENT","v7","v8","LWKLYWGE","MARRIED",
                     "MIDATL","MT","NEWENG","v14","v15", "CENSUS","v17","QOB","RACE","SMSA","SOATL","v22","v23",
                     "WNOCENT","WSOCENT","v26","YOB")
-# LWKLYWGE: Log weekly earnings
+# LWKLYWGE: Log weekly earnings 
 data1 <- subset( data,CENSUS==80 & v17 <=50 & YOB <=40)
 head(data1)
 rm(data)
@@ -42,25 +42,51 @@ Result[2,] <-  c(fit.tsls.b$coefficients["d1",], fit.tsls.b $se["d1"])
 ## Baseline 2SLS Selection
 d = as.matrix(data1[,"EDUC"])
 y = as.matrix(data1[,"LWKLYWGE"])
-rD_x = rlasso(d ~ x + z)
+W= cbind(z,x)
+rD_xz = rlasso(d ~ W)
+ind.dzx <- rD_xz$index
 ## Do LASSO of Y on X to obtain theta, and extract residuals
 rY_x = rlasso(y ~ x)
-rY = rY_x$res
-rm(rY_x)
+rY = rY_x$residuals
+# rD_x = rlasso(d ~ x)
+#  rD = rD_x$res
 ## Build D_hat from estimated gamma and delta
-dhat <- (d- rD_x$res) 
-## regress d_hat on X to get nu
-rD = rlasso(dhat ~ x)
-## extract the residuals
-rD_res =rD$res
-rD1 <- d - (dhat -rD$res ) 
-rm(rD_x)
-rm(rD)
-## Do TSLS 
-ivfit.lasso = tsls(y=rY,d=rD1, x=NULL, z=rD_res, intercept = FALSE)
-summary(ivfit.lasso)
+### compute the projection of d on vect(W[selected covariates using lasso])
+PZ <-  W[, ind.dzx] %*% MASS::ginv(t( W[, ind.dzx]) %*%  W[, ind.dzx]) %*%  t(W[, ind.dzx]) %*% d
+## do LASSO of this predicted d using these covariates on x (d_hat on X) to get nu
+rPZ.x <- rlasso(x, PZ)
+ind.PZx <- rPZ.x$index
+
+## extract the residuals of the lasso of d_hat on X
+if (sum(ind.PZx) == 0) {
+  Dr <- d - mean(d)
+} else {
+  # Dr <- d - predict(rPZ.x) 
+  Dr <- d - x[,ind.PZx]%*%MASS::ginv(t(x[,ind.PZx])%*%x[,ind.PZx])%*%t(x[,ind.PZx])%*%PZ
+  
+}
+
+## extract the residuals of the lasso of Y on X 
+if (sum(rY_x$index) == 0) {
+  Yr <- y - mean(y)
+} else {
+  Yr <- rY
+}
+
+## extract the residuals of the lasso of the projection of  Y on X 
+if (sum(rPZ.x$index) == 0) {
+  Zr <- PZ - mean(x)
+} else {
+  Zr <- rPZ.x$residuals
+}
+
+## Do TSLS of the residuals of Y/X on residuals of D/X using residuals of Dhat/X as instruments
+ivfit.lasso <-  tsls(y = Yr, d = Dr, x = NULL, z = Zr, intercept = FALSE)
+# coef <- as.vector( ivfit.lasso$coefficient)
+# ivfit.lasso = tsls(y=rY,d=rD1, x=NULL, z=rD_res, intercept = FALSE)
 # fit.lasso.b <-rlassoIV(x=x,d=as.matrix(data1[,"EDUC"]),y=as.matrix(data1[,"LWKLYWGE"]),z=z, select.X=TRUE, select.Z=TRUE)
-Result[3,] <- c(ivfit.lasso$coefficients,ivfit.lasso$se)
+Result[3,] <- c(ivfit.lasso$coef[1], ivfit.lasso$se[1])
+
 
 library(ivmodel)
 ##### for Fuller corrected estimates 

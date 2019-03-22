@@ -10,6 +10,12 @@ library("MASS")
 library("mnormt")
 library(hdm)
 library(AER)
+library(car)
+update.packages("Rcpp")
+
+
+
+
 ### Simulation parameters
 set.seed(13571113)
 p_x = 200 ## number of controls
@@ -22,7 +28,7 @@ split = runif(n)
 cvgroup = as.numeric(cut(split,quantile(split,probs = seq(0, 1, 1/K)),include.lowest = T))  
 
 ##number of MC replications
-MC =1000
+MC =2000
 Results = matrix(ncol=3, nrow=MC)
 
 out = NULL
@@ -77,30 +83,58 @@ for (kk in 1:MC){
   
   ### METHOD 1: Double-Selection, no sample-splitting
   ## Do LASSO of D on X to obtain gamma
-  rD_x = rlasso(d ~ x + z)
+  W= cbind(z,x)
+  rD_xz = rlasso(d ~ W)
+  ind.dzx <- rD_xz$index
   ## Do LASSO of Y on X to obtain theta, and extract residuals
   rY_x = rlasso(y ~ x)
-  rY = rY_x$res
+  rY = rY_x$residuals
+ # rD_x = rlasso(d ~ x)
+ #  rD = rD_x$res
   ## Build D_hat from estimated gamma and delta
-  dhat <- (d- rD_x$res) 
-  ## regress d_hat on X to get nu
-  rD = rlasso(dhat ~ x)
-  ## extract the residuals
-  rD_res =rD$res
-  rD1 <- d - (dhat -rD$res ) 
-  ## Do TSLS of the residuals of Y/X on residuals of D/X using residuals of Dhat/X as instruments
-  ivfit.lasso = tsls(y=rY,d=rD1, x=NULL, z=rD_res, intercept = FALSE)
-  out <- rbind(out,c(ivfit.lasso$coef[1], ivfit.lasso$se[1],ivfit.lasso$coef[1]/ivfit.lasso$se[1]))
+  ### compute the projection of d on vect(W[selected covariates using lasso])
+  PZ <-  W[, ind.dzx] %*% MASS::ginv(t( W[, ind.dzx]) %*%  W[, ind.dzx]) %*%  t(W[, ind.dzx]) %*% d
+  ## do LASSO of this predicted d using these covariates on x (d_hat on X) to get nu
+  rPZ.x <- rlasso(x, PZ)
+  ind.PZx <- rPZ.x$index
+    
+    ## extract the residuals of the lasso of d_hat on X
+  if (sum(ind.PZx) == 0) {
+    Dr <- d - mean(d)
+  } else {
+    # Dr <- d - predict(rPZ.x) 
+    Dr <- d - x[,ind.PZx]%*%MASS::ginv(t(x[,ind.PZx])%*%x[,ind.PZx])%*%t(x[,ind.PZx])%*%PZ
+    
+  }
   
+  ## extract the residuals of the lasso of Y on X 
+  if (sum(rY_x$index) == 0) {
+    Yr <- y - mean(y)
+  } else {
+    Yr <- rY
+  }
+  
+  ## extract the residuals of the lasso of the projection of  Y on X 
+  if (sum(rPZ.x$index) == 0) {
+    Zr <- PZ - mean(x)
+  } else {
+    Zr <- rPZ.x$residuals
+  }
+  
+  ## Do TSLS of the residuals of Y/X on residuals of D/X using residuals of Dhat/X as instruments
+  ivfit.lasso <-  tsls(y = Yr, d = Dr, x = NULL, z = Zr, intercept = FALSE)
+  # coef <- as.vector( ivfit.lasso$coefficient)
+  # ivfit.lasso = tsls(y=rY,d=rD1, x=NULL, z=rD_res, intercept = FALSE)
+  out <- rbind(out,c(ivfit.lasso$coef[1], ivfit.lasso$se[1],ivfit.lasso$coef[1]/ivfit.lasso$se[1]))
   ### Build in function to do all this.... 
- # ivfit.lasso2 = rlassoIV(x,d,y,z, select.X=TRUE, select.Z=TRUE)
- #  out1 <- rbind(out1,c(ivfit.lasso2$coef, ivfit.lasso2$se,ivfit.lasso2$coef/ivfit.lasso2$se ))
-
+ # ivfit.lasso2 = rlassoIV(y ~ x + d | x + z, select.X=TRUE, select.Z=TRUE)
+ #  out1 <- rbind(out1,c(ivfit.lasso2$coef, ivfit.lasso2$se,ivfit.lasso2$coef/ivfit.lasso2$se )
+ 
   ### METHOD 0: selection, alternative (Non-orthogonal)
   ## select all the controls selected by the two Lasso
-  sel = (abs(rD_x$coefficients[2:(dim(x)[2]+1)])> 10^(-6))*1 + (rY_x$coefficients[2:(dim(x)[2]+1)]> 10^(-6))*1
+  sel = (abs(rD_xz$coefficients[(2+dim(z)[2]):(1+dim(x)[2]+dim(z)[2])])> 10^(-6))*1 + (rY_x$coefficients[2:(dim(x)[2]+1)]> 10^(-6))*1
   sel[sel ==2] <- 1 
-  sel_z = (rD_x$coefficients[(2+dim(x)[2]):(1+dim(x)[2]+dim(z)[2])] > 10^(-6))*1 
+  sel_z = (rD_xz$coefficients[2:(dim(z)[2])] > 10^(-6))*1 
   ## Do TSLS 
   x_sel = x[,sel==1]
   z_sel = z[,sel_z==1]
@@ -112,30 +146,59 @@ for (kk in 1:MC){
   se <-  coef(summary(ivfit.lm))[2, "Std. Error"]
   out1 <- rbind(out1,c(ivfit.lm$coef["d"],  se ,ivfit.lm$coef["d"]/se))
   
- 
-  
   
  ### METHOD 2: Double Selection with Sample Splitting
  outK = matrix(ncol=3, nrow=K)
+ k=1
  for(k in 1:K){
    Ik = cvgroup==k # Separate the sample
    NIk = cvgroup!=k
    ind <- matrix(1,dim(d)[1],1)
    ind_x <- matrix(1,dim(x[Ik,])[1],1)
+   
+
+  
    ## Do LASSO of D on X to obtain gamma
-   rD_x = rlasso(d[NIk,] ~ x[NIk,] + z[NIk,])
+   W= cbind(z,x)
+   rD_xz = rlasso(d[NIk,] ~   W[NIk,] )
+   ind.dzx <- rD_xz$index
    ## Do LASSO of Y on X to obtain theta, and extract residuals
-   rY = rlasso(y[NIk,] ~ x[NIk,])
+   rY_x = rlasso(y[NIk,] ~ x[NIk,])
+   ind.Y_x <- rY_x$index
    ## Build D_hat from estimated gamma and delta
-   dhat <-  cbind( ind ,x,z)%*%rD_x$coefficients
+   PZ <-  W[, ind.dzx] %*% MASS::ginv(t( W[, ind.dzx]) %*%  W[, ind.dzx]) %*%  t(W[, ind.dzx]) %*% d
    ## regress d_hat on X to get nu
-   rD = rlasso(dhat[NIk,] ~ x[NIk,])
-   ## extract the residuals
-   rD_res = dhat[Ik,] - cbind( ind_x ,x[Ik,])%*%rD$coefficients
-   rD1 <- d[Ik,] - cbind( ind_x ,x[Ik,])%*%rD$coefficients
-   rY <-  y[Ik,] -  cbind( ind_x ,x[Ik,])%*%rY$coefficients
+   rPZ.x <- rlasso(x[NIk,], PZ[NIk,])
+   ind.PZx <- rPZ.x$index
+   
+   ## extract the residuals of the lasso of d_hat on X
+   if (sum(ind.PZx) == 0) {
+     Dr <- d[Ik,] - mean(d[Ik,])
+   } else {
+     # Dr <- d[Ik,] - predict(rPZ.x, newdata=x[Ik,])
+     Dr <- d[Ik,] - x[Ik,   ind.PZx] %*% (MASS::ginv(t( x[NIk,   ind.PZx]) %*%  x[NIk,   ind.PZx]) %*%  t(x[NIk,   ind.PZx]) %*% d[NIk,])
+    }
+   
+   ## extract the residuals of the lasso of Y on X 
+   if (sum(rY_x$index) == 0) {
+     Yr <- y[Ik,] - mean(y[Ik,])
+   } else {
+     # Yr <-  y[Ik,] - predict(rY_x, newdata=x[Ik,])
+     Yr <-  y[Ik,] - x[Ik,   ind.Y_x] %*% (MASS::ginv(t( x[NIk,   ind.Y_x]) %*%  x[NIk,   ind.Y_x]) %*%  t(x[NIk,   ind.Y_x]) %*% y[NIk,])
+     
+   }
+   
+   ## extract the residuals of the lasso of the projection of  Y on W on X
+   if (sum(rPZ.x$index) == 0) {
+     Zr <- PZ[Ik,] - mean(x[Ik,])
+   } else {
+     # Zr <-  PZ[Ik,] -predict(rPZ.x, newdata=x[Ik,])
+     Zr <-  PZ[Ik,] - x[Ik,   ind.PZx] %*% (MASS::ginv(t( x[NIk,   ind.PZx]) %*%  x[NIk,   ind.PZx]) %*%  t(x[NIk,   ind.PZx]) %*% PZ[NIk,])
+     
+   }
+   
    ## Do TSLS 
-   ivfit.lasso = tsls(y=rY,d=rD1, x=NULL, z=rD_res, intercept = FALSE)
+   ivfit.lasso<-   tsls(y = Yr, d = Dr, x = NULL, z = Zr, intercept = FALSE)
    outK[k,] <- c(ivfit.lasso$coef[1], ivfit.lasso$se[1],ivfit.lasso$coef[1]/ivfit.lasso$se[1])
   }
   outK1 <- outK
@@ -148,7 +211,7 @@ for (kk in 1:MC){
   outK1[,2] <- outK1[,2] +(  outK1[,1] -   coef1  )^2
   outKK2 <-  rbind(outKK2,c(coef1, mean(  outK1[,2]),coef1/mean(  outK1[,2])))
  
- 
+ cat(paste0("iteration", kk , "\n"))
 }
 
 
@@ -237,48 +300,7 @@ stdev=1
 grid.arrange(get.plot(data_res,1,"Naive", 1), get.plot(data_res,2,"Immunized",1), get.plot(data_res,3,"Oracle",1), ncol=3)
 
 grid.arrange(get.plot(data_res,4,"Cross-fitted med.",1),get.plot(data_res,5,"Cross-fitted mean", 1), ncol=2)
-
-
 ###### ##### 
-
-
-
-library(BLPestimatoR)
-
-
-
-library(xtable)
-
-
-table(out)
-
-
-
-
-
-###### 
-install.packages("Rmosek", type="source")
-
-
-library(devtools)
-install_github("cran/Rmosek")
-install_github("cran/hdm")
-
-libra
-install.packages('C:/Users/gaillac/Downloads/hdm_0.2.3.tar.gz', repos = NULL, type="source")
-install.packages('C:/Users/gaillac/Downloads/Rmosek_1.2.5.1.tar.gz', repos = NULL, type="source")
-
-install.packages("gpuR")
-
-install_github("cdeterman/gpuR")
-devtools::install_github("cdeterman/RViennaCL")
-library("gpuR")
-# verify you have valid GPUs
-detectGPUs()
-set.seed(123)
-gpuA <- gpuMatrix(rnorm(16), nrow=4, ncol=4)
-gpuB <- gpuA %*% gpuA
-
 
 
 
