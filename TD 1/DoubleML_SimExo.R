@@ -54,18 +54,24 @@ for(r in 1:R){
   }
   
   
-  ### METHOD 2: Double-Selection, no sample-splitting (TO BE COMPLETED)
+ ### METHOD 2: Double-Selection, no sample-splitting
   # A. Selection on Treatment
-  ###
+  treatfit = LassoFISTA(y=d,X=X,nopen=c(1),lambda=.15*lambda) # Do not penalize the constant
+  Sd = which(treatfit$beta != 0)
+  Sd = Sd[!Sd == 1] # delete intercept
   
   # B. Selection on Outcome
-  ###
+  outcomefit = LassoFISTA(y=y,X=X,nopen=c(1),lambda=lambda) # Do not penalize the constant
+  Sy = which(outcomefit$beta != 0)
+  Sy = Sy[!Sy == 1] # delete intercept
   
   # C. Compute Post-Double-Selection
-  ###
-  
-  # D. Compute sd (optional) 
-  ###
+  Shat = union(Sy,Sd)
+  if(length(Shat)==0){
+    DSfit = lm(y ~ d)
+  } else {
+    DSfit = lm(y ~ d + X[,Shat])
+  }
   
   
   ### METHOD 3: Double Selection with Sample Splitting (TO BE COMPLETED)
@@ -96,7 +102,7 @@ for(r in 1:R){
   
   ### COLLECTING RESULTS (TO BE COMPLETED)
   Results[r,] = c(naivefit$coef['d'],
-                  0,
+                  DSfit$coef['d'],
                   mean(theta)) 
   
   setTxtProgressBar(pb, r/R)
