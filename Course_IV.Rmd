@@ -58,6 +58,7 @@ $$   \left(\begin{array}{c} \varepsilon_i \\ u_i \\ \zeta_i \\ x_i \end{array} \
  \begin{array}{cccc}1  & 0.6 & 0 & 0\\ 0.6  & 1 & 0 & 0\\ 0  & 0 & I_{p^{z}} & 0\\ 0  & 0 & 0& \Sigma  \end{array} \right) \right)
  $$
 where:
+
 * $\Sigma$  is a $p^{x} \times p^{x}$ matrix with $\Sigma_{kj} = (0.5)^{|j-k|}$ and $I_{p^{z}}$ the $p^{z} \times p^{z}$  identity matrix. 
 
 ```{r} 
@@ -206,7 +207,7 @@ Note that this Step amounts to perform 2SLS using the residuals  $Y_i - \hat{\th
 ```
 
 
-A naive non-orthogonal estimator, where we use Lasso regression of $D$ on $(X,Z)$ to obtain the identities of the controls and instruments that enter the instrumental equation: $I^{D}_X= \{ j : \hat{\delta}_j \neq 0\}$, $I^{D}_Z= \{ j : \hat{\delta}_j \neq 0\}$. We run Lasso regression of $Y$ on $X$ to obtain the identities of the controls that enter the outcome equation: $I^{Y}_X= \{ j : \hat{\delta}_j \neq 0\} $. We then run 2SLS estimator of $Y$ on $D$ and the selected controls and instruments $I^{D}_X\cup I^{Y}_X$ and $I^{D}_Z$.
+A naive non-orthogonal estimator, where we use Lasso regression of $D$ on $(X,Z)$ to obtain the identities of the controls and instruments that enter the instrumental equation: $I^{D}_X= \{ j : \hat{\delta}_j \neq 0\}$, $I^{D}_Z= \{ j : \hat{\delta}_j \neq 0\}$. We run Lasso regression of $Y$ on $X$ to obtain the identities of the controls that enter the outcome equation: $I^{Y}_X= \{ j : \hat{\delta}_j \neq 0\}$. We then run 2SLS estimator of $Y$ on $D$ and the selected controls and instruments $I^{D}_X\cup I^{Y}_X$ and $I^{D}_Z$.
     
     
 ```{r}
@@ -229,6 +230,7 @@ A naive non-orthogonal estimator, where we use Lasso regression of $D$ on $(X,Z)
 
 
 Two double-selection estimator based on the Lasso with cross-fitting ($K=3$) as described in Section \ref{sec:crossfit}, but:
+
 * one aggregating with the mean:
    $$\begin{align}
       \hat{\tau} = &\dfrac{1}{K}\sum_{k=1}^K \hat{\tau}_k \\
