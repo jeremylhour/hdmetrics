@@ -8,32 +8,40 @@
 #' @param g1 estimate of E(Y_1 \vert X)
 #' @param g0 estimate of E(Y_0 \vert X)
 #' @param m propensity score estimate P(D=1 \vert X)
+#' @param selec indicator of common support
 #' 
 #' All vectors above must have the same length.
 #' 
 #' @author Jeremy LHour
 
-ATE <- function(Y,D,g1,g0,m){
-  gamma = (g1-g0) + D*(Y-g1)/m - (1-D)*(Y-g0)/(1-m)
+ATE <- function(Y,D,g1,g0,m,CS){
+  if(missing(CS)){
+    n = length(Y)
+    CS = rep(TRUE,n)
+  }
+  gamma = (g1[CS]-g0[CS]) + D[CS]*(Y[CS]-g1[CS])/m[CS] - (1-D[CS])*(Y[CS]-g0[CS])/(1-m[CS])
   return(mean(gamma))
 }
 
-SE.ATE <- function(Y,D,g1,g0,m){
-  n = length(Y)
-  gamma = (g1-g0) + D*(Y-g1)/m - (1-D)*(Y-g0)/(1-m)
+SE.ATE <- function(Y,D,g1,g0,m,CS){
+  if(missing(CS)) CS = rep(TRUE,n)
+  n = length(Y[CS])
+  gamma = (g1[CS]-g0[CS]) + D[CS]*(Y[CS]-g1[CS])/m[CS] - (1-D[CS])*(Y[CS]-g0[CS])/(1-m[CS])
   return(sd(gamma)/sqrt(n))
 }
 
-ATT <- function(Y,D,g0,m){
-  pi = mean(D)
-  gamma = D*(Y-g0)/pi - (1-D)*m*(Y-g0)/(pi*(1-m))
+ATT <- function(Y,D,g0,m,CS){
+  if(missing(CS)) CS = rep(TRUE,length(Y))
+  pi = mean(D[CS])
+  gamma = D[CS]*(Y[CS]-g0[CS])/pi - (1-D[CS])*m[CS]*(Y[CS]-g0[CS])/(pi*(1-m[CS]))
   return(mean(gamma))
 }
 
-SE.ATT <- function(Y,D,g0,m){
-  n = length(Y)
-  pi = mean(D)
-  gamma = D*(Y-g0)/pi - (1-D)*m*(Y-g0)/(pi*(1-m))
+SE.ATT <- function(Y,D,g0,m,CS){
+  if(missing(CS)) CS = rep(TRUE,length(Y))
+  n = length(Y[CS])
+  pi = mean(D[CS])
+  gamma = D[CS]*(Y[CS]-g0[CS])/pi - (1-D[CS])*m[CS]*(Y[CS]-g0[CS])/(pi*(1-m[CS]))
   return(list(SE = sd(gamma)/sqrt(n),
               gamma = gamma))
 }
