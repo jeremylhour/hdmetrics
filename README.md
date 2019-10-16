@@ -1,5 +1,6 @@
 # hdmetrics
-High-Dimensional Econometrics, ENSAE
+Machine Learning for Econometrics, ENSAE
+(previously High-Dimensional Econometrics)
 
 3A ENSAE and 2nd year of Master in Economics. This repo contains some code to illustrate the class.
 
