@@ -1,9 +1,9 @@
 # hdmetrics
 Machine Learning for Econometrics -- ENSAE Paris
 
-3rd Edition -- 2020
-
 (previously High-Dimensional Econometrics)
+
+3rd Edition -- 2020
 
 3A ENSAE and 2nd year of Master in Economics. This repo contains some code to illustrate the class.
 
